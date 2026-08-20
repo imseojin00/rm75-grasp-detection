@@ -6,26 +6,37 @@ def capture_one(object_name, angle_label, index):
     depth, color, intrinsics = get_frame(pipeline, align)
     ee_pose = {"placeholder": True}  # TODO: 21일 실제 pose 함수로 교체
     save_capture(depth, color, intrinsics, depth_scale, ee_pose, object_name, angle_label, index)
-    input(f"{object_name}_{angle_label} 저장 완료. 다음 물체/각도로 바꾸고 Enter...")
+    input(f"[{index}] {object_name}_{angle_label} 저장 완료. 다음으로 바꾸고 Enter...")
 
-# ===== 블록 =====
-capture_one("block_1x1", "front", 1)
+# ===== block_1x1 (8장) =====
+for angle in ["front", "side", "top", "diagonal"]:
+    for i in [1, 2]:
+        capture_one("block_1x1", angle, i)
 
-capture_one("block_1x2", "long_axis", 1)
-capture_one("block_1x2", "short_axis", 2)
+# ===== block_1x2 (10장) =====
+for angle in ["long_axis_front", "long_axis_diagonal", "short_axis_front", "short_axis_diagonal", "top"]:
+    for i in [1, 2]:
+        capture_one("block_1x2", angle, i)
 
-capture_one("block_L3", "front", 1)
-capture_one("block_L3", "top", 2)
+# ===== block_L3 (12장) =====
+for angle in ["front", "back", "top", "rot90_1", "rot90_2", "diagonal"]:
+    for i in [1, 2]:
+        capture_one("block_L3", angle, i)
 
-capture_one("block_2x2", "front", 1)
-capture_one("block_2x2", "top", 2)
+# ===== block_2x2 (8장) =====
+for angle in ["front", "top", "side", "diagonal"]:
+    for i in [1, 2]:
+        capture_one("block_2x2", angle, i)
 
-# ===== 캔 =====
-capture_one("can", "front", 1)
-capture_one("can", "side", 2)
+# ===== can (10장) =====
+for angle in ["standing_top", "standing_side", "lying_front", "lying_end", "lying_diagonal"]:
+    for i in [1, 2]:
+        capture_one("can", angle, i)
 
-# ===== 수세미 =====
-capture_one("sponge", "front", 1)
-capture_one("sponge", "short_axis", 2)
+# ===== sponge (8장) =====
+for angle in ["wide_face_front", "wide_face_back", "short_axis", "diagonal"]:
+    for i in [1, 2]:
+        capture_one("sponge", angle, i)
 
 pipeline.stop()
+print("전체 촬영 완료! 총 56장")

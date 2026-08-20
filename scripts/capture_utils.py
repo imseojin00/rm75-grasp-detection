@@ -1,7 +1,14 @@
+import os
 import json
 import numpy as np
 import pyrealsense2 as rs
 from datetime import datetime
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "..", "data")
 
 
 def init_camera():
@@ -50,6 +57,33 @@ def get_frame(pipeline, align):
     return depth_image, color_image, intrinsics
 
 
+class PoseReader(Node):
+    """joint_states 토픽에서 최신 관절값을 받아 저장해두는 노드"""
+    def __init__(self):
+        super().__init__('pose_reader')
+        self.latest_joints = None
+        self.create_subscription(JointState, '/joint_states', self._callback, 10)
+
+    def _callback(self, msg):
+        self.latest_joints = list(msg.position)
+
+
+def init_robot():
+    """ROS2 노드 초기화 — 한 번만 실행"""
+    rclpy.init()
+    node = PoseReader()
+    return node
+
+
+def get_ee_pose(node):
+    """현재 joint 값 한 번 읽어오기"""
+    for _ in range(10):
+        rclpy.spin_once(node, timeout_sec=0.1)
+        if node.latest_joints is not None:
+            break
+    return {"joints": node.latest_joints}
+
+
 def save_capture(depth_image, color_image, intrinsics, depth_scale,
                   ee_pose, object_name, angle_label, index):
     """
@@ -57,12 +91,12 @@ def save_capture(depth_image, color_image, intrinsics, depth_scale,
     color_image: numpy array (BGR)
     intrinsics: dict {fx, fy, cx, cy}
     depth_scale: float (미터 변환 계수)
-    ee_pose: list or dict
+    ee_pose: dict {joints} or None
     """
     base_name = f"{object_name}_{index:02d}_{angle_label}"
 
-    np.save(f"data/{base_name}.npy", depth_image)
-    np.save(f"data/{base_name}_color.npy", color_image)
+    np.save(os.path.join(DATA_DIR, f"{base_name}.npy"), depth_image)
+    np.save(os.path.join(DATA_DIR, f"{base_name}_color.npy"), color_image)
 
     meta = {
         "timestamp": datetime.now().isoformat(),
@@ -72,7 +106,7 @@ def save_capture(depth_image, color_image, intrinsics, depth_scale,
         "depth_scale": depth_scale,
         "ee_pose": ee_pose,
     }
-    with open(f"data/{base_name}_meta.json", "w") as f:
+    with open(os.path.join(DATA_DIR, f"{base_name}_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
 
     print(f"저장 완료: {base_name}")
