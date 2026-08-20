@@ -50,17 +50,26 @@ def get_frame(pipeline, align):
     return depth_image, color_image, intrinsics
 
 
-def save_capture(depth_image, intrinsics, ee_pose, object_name, angle_label, index):
-    """찍은 걸 파일로 저장"""
+def save_capture(depth_image, color_image, intrinsics, depth_scale,
+                  ee_pose, object_name, angle_label, index):
+    """
+    depth_image: numpy array (uint16 raw)
+    color_image: numpy array (BGR)
+    intrinsics: dict {fx, fy, cx, cy}
+    depth_scale: float (미터 변환 계수)
+    ee_pose: list or dict
+    """
     base_name = f"{object_name}_{index:02d}_{angle_label}"
 
     np.save(f"data/{base_name}.npy", depth_image)
+    np.save(f"data/{base_name}_color.npy", color_image)
 
     meta = {
         "timestamp": datetime.now().isoformat(),
         "object_name": object_name,
         "angle_label": angle_label,
         "intrinsics": intrinsics,
+        "depth_scale": depth_scale,
         "ee_pose": ee_pose,
     }
     with open(f"data/{base_name}_meta.json", "w") as f:
