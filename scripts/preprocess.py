@@ -97,7 +97,7 @@ def preprocess(base_name,
     for i in range(max_label + 1):
         print(f"[디버그]   클러스터 {i}: {np.sum(labels == i)}개")
 
-    # --- 카메라 중심에 가까운 큰 클러스터를 물체로 선택 ---
+    # --- 물체 후보 선택 ---
     candidates = []
     for i in range(max_label + 1):
         indices = np.where(labels == i)[0]
@@ -113,9 +113,26 @@ def preprocess(base_name,
     if len(candidates) == 0:
         raise RuntimeError("물체 후보 cluster가 없습니다.")
 
-    target_label, target_count, _, target_center = min(
-        candidates, key=lambda x: x[2]
-    )
+    # 물체 종류에 따라 선택 기준을 다르게 적용 (어진 로직)
+    if base_name.startswith("sponge_"):
+        # 수세미는 얇은 자세에서 point 수가 적을 수 있으므로
+        # 중심에 가장 가까운 cluster 선택
+        target_label, target_count, _, target_center = min(
+            candidates, key=lambda x: x[2]
+        )
+    else:
+        # 블록/캔은 너무 작은 cluster가 중심에 가깝다는 이유만으로
+        # 선택되는 것을 방지
+        max_count = max(c[1] for c in candidates)
+        filtered_candidates = [
+            c for c in candidates
+            if c[1] >= max(100, max_count * 0.25)
+        ]
+        target_label, target_count, _, target_center = min(
+            filtered_candidates, key=lambda x: x[2]
+        )
+
+    print(f"[디버그] 선택된 클러스터: {target_label} ({target_count}개)")
 
     object_indices = np.where(labels == target_label)[0].tolist()
     object_pcd = remaining.select_by_index(object_indices)
