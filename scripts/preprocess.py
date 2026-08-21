@@ -270,16 +270,43 @@ if len(candidates) == 0:
 
 
 # 중심에 가장 가까운 cluster 선택
-target_label, target_count, _, target_center = min(
-    candidates,
-    key=lambda x: x[2]
-)
+# 너무 작은 cluster가 중심에 가깝다는 이유만으로
+# 물체로 선택되는 것을 방지
+# 물체 종류에 따라 cluster 선택 기준을 다르게 적용
+if base_name.startswith("sponge_"):
+    # 수세미는 얇은 자세에서 point 수가 적을 수 있으므로
+    # 중심에 가장 가까운 cluster 선택
+    target_label, target_count, _, target_center = min(
+        candidates,
+        key=lambda x: x[2]
+    )
+
+else:
+    # 블록 / 캔은 너무 작은 cluster가
+    # 중심에 가깝다는 이유만으로 선택되는 것을 방지
+    max_count = max(c[1] for c in candidates)
+
+    filtered_candidates = [
+        c for c in candidates
+        if c[1] >= max(100, max_count * 0.25)
+    ]
+
+    target_label, target_count, _, target_center = min(
+        filtered_candidates,
+        key=lambda x: x[2]
+    )
 
 print("선택된 물체 cluster:", target_label)
 print("선택된 cluster 중심:", target_center)
 
 object_indices = np.where(labels == target_label)[0].tolist()
 object_pcd = remaining.select_by_index(object_indices)
+
+# 선택된 물체 cluster의 성긴 이상치 제거
+
+object_pcd = remaining.select_by_index(object_indices)
+
+print("물체 point 수:", len(object_pcd.points))
 
 print("물체 point 수:", len(object_pcd.points))
 
