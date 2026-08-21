@@ -9,11 +9,12 @@ DATA_DIR = ROOT / "data"
 
 
 def preprocess(base_name,
-                depth_min=0.15, depth_max=0.50,
-                u_min=150, u_max=500, v_min=180, v_max=430,
-                voxel=0.002, plane_threshold=0.003,
-                dbscan_eps=0.008, dbscan_min_points=20,
-                skip_ransac=False):
+                depth_min=0.1, depth_max=0.5,
+                u_min=200, u_max=330, v_min=300, v_max=420,
+                voxel=0.001, plane_threshold=0.003,
+                dbscan_eps=0.015, dbscan_min_points=20,
+                min_cluster_size=20,
+                skip_ransac=True):
     """
     depth+color+meta를 읽어서 배경 제거 + 클러스터링 후,
     카메라 중심에 가장 가까운 물체 클러스터의 point cloud를 반환.
@@ -49,6 +50,8 @@ def preprocess(base_name,
     points = np.stack((x, y, z), axis=1)
     colors = color[valid].astype(np.float64) / 255.0
 
+    print(f"[디버그] ROI 통과 점 개수: {len(points)}")
+
     if len(points) == 0:
         raise RuntimeError("ROI 안에 유효한 Point가 없습니다.")
 
@@ -58,12 +61,14 @@ def preprocess(base_name,
 
     # --- Voxel Downsampling ---
     pcd_down = pcd.voxel_down_sample(voxel_size=voxel)
+    print(f"[디버그] voxel downsample 후 점 개수: {len(pcd_down.points)}")
     if len(pcd_down.points) < 3:
         raise RuntimeError("RANSAC을 수행하기에 Point가 너무 적습니다.")
 
-    # --- RANSAC (평면 제거) ---
+    # --- RANSAC (평면 제거, 선택적) ---
     if skip_ransac:
         remaining = pcd_down
+        print("[디버그] RANSAC 건너뜀")
     else:
         plane_model, inliers = pcd_down.segment_plane(
             distance_threshold=plane_threshold,
@@ -71,6 +76,7 @@ def preprocess(base_name,
             num_iterations=1000
         )
         remaining = pcd_down.select_by_index(inliers, invert=True)
+        print(f"[디버그] RANSAC 후 남은 점 개수: {len(remaining.points)}")
 
     if len(remaining.points) == 0:
         raise RuntimeError("전처리 이후 Point가 남지 않았습니다.")
@@ -87,12 +93,15 @@ def preprocess(base_name,
         raise RuntimeError("DBSCAN 실패 — 유효한 cluster를 찾지 못했습니다.")
 
     max_label = labels.max()
+    print(f"[디버그] DBSCAN 클러스터 개수: {max_label + 1}")
+    for i in range(max_label + 1):
+        print(f"[디버그]   클러스터 {i}: {np.sum(labels == i)}개")
 
     # --- 카메라 중심에 가까운 큰 클러스터를 물체로 선택 ---
     candidates = []
     for i in range(max_label + 1):
         indices = np.where(labels == i)[0]
-        if len(indices) < 100:
+        if len(indices) < min_cluster_size:
             continue
         cluster_pcd = remaining.select_by_index(indices.tolist())
         center = np.asarray(
