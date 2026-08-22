@@ -1,4 +1,3 @@
-import sys
 import numpy as np
 import open3d as o3d
 
@@ -6,48 +5,37 @@ from preprocess import preprocess
 
 
 # ============================================================
-# 설정
-# ============================================================
-
-GRIPPER_MIN = 0.005   # 0.5 cm
-GRIPPER_MAX = 0.065   # 6.5 cm
-
-NORMAL_RADIUS = 0.01
-NORMAL_MAX_NN = 30
-
-NUM_CONTACT_CANDIDATES = 80
-
-ANTIPODAL_THRESHOLD = -0.8
-
-
-# ============================================================
 # 1. PCA
 # ============================================================
 
 def compute_pca_axes(pcd):
-    """
-    수직 파지 전용: z(카메라 깊이) 무시, x-y 평면에서만 PCA.
-    범열 2026-08-21 제안 반영.
-    """
+
     points = np.asarray(pcd.points)
+
     if len(points) < 10:
         return None, None, None
+
     center = points.mean(axis=0)
-    xy = points[:, :2] - center[:2]
-    cov_xy = np.cov(xy.T)
-    eigvals_xy, eigvecs_xy = np.linalg.eigh(cov_xy)
-    print("\n[2D PCA 고유값 (x-y 평면)]")
-    for k in range(2):
-        print(f"  축 {k}: {eigvals_xy[k]:.8f}")
-    short_axis = np.array([eigvecs_xy[0, 0], eigvecs_xy[1, 0], 0.0])
-    long_axis = np.array([eigvecs_xy[0, 1], eigvecs_xy[1, 1], 0.0])
-    approach_axis = np.array([0.0, 0.0, 1.0])
-    eigvecs = np.column_stack([short_axis, long_axis, approach_axis])
+
+    centered = points - center
+
+    cov = np.cov(centered.T)
+
+    eigvals, eigvecs = np.linalg.eigh(cov)
+
+    print("\n[PCA 고유값]")
+
+    for i in range(3):
+        print(f"  축 {i}: {eigvals[i]:.8f}")
+
     print("\n[PCA 축 방향]")
-    print(f"  축 0 (짧은축): {eigvecs[:, 0]}")
-    print(f"  축 1 (긴축): {eigvecs[:, 1]}")
-    print(f"  축 2 (approach): {eigvecs[:, 2]}")
+
+    for i in range(3):
+        print(f"  축 {i}: {eigvecs[:, i]}")
+
     return center, eigvecs, points
+
+
 # ============================================================
 # 2. Surface Normal
 # ============================================================
@@ -62,8 +50,8 @@ def estimate_normals(pcd, center):
 
     temp_pcd.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(
-            radius=NORMAL_RADIUS,
-            max_nn=NORMAL_MAX_NN
+            radius=0.01,
+            max_nn=30
         )
     )
 
@@ -72,7 +60,7 @@ def estimate_normals(pcd, center):
     ).copy()
 
     # --------------------------------------------------------
-    # normal을 물체 바깥 방향으로 정렬
+    # normal 방향을 물체 바깥쪽으로 정렬
     # --------------------------------------------------------
 
     vectors = points - center
@@ -86,9 +74,7 @@ def estimate_normals(pcd, center):
 
     normals[flip_mask] *= -1
 
-    # --------------------------------------------------------
     # normalize
-    # --------------------------------------------------------
 
     lengths = np.linalg.norm(
         normals,
@@ -104,7 +90,7 @@ def estimate_normals(pcd, center):
 
 
 # ============================================================
-# 3. 특정 축의 전체 폭
+# 3. 특정 축 방향 폭
 # ============================================================
 
 def compute_axis_width(
@@ -112,8 +98,6 @@ def compute_axis_width(
     center,
     axis
 ):
-
-    axis = axis / np.linalg.norm(axis)
 
     projections = (
         (points - center) @ axis
@@ -133,13 +117,8 @@ def get_contact_candidates(
     points,
     center,
     grasp_axis,
-    num_candidates=NUM_CONTACT_CANDIDATES
+    num_candidates=80
 ):
-
-    grasp_axis = (
-        grasp_axis
-        / np.linalg.norm(grasp_axis)
-    )
 
     projections = (
         (points - center)
@@ -167,7 +146,7 @@ def get_contact_candidates(
 
 
 # ============================================================
-# 5. Antipodal grasp 후보 검색
+# 5. Antipodal 후보 검색
 # ============================================================
 
 def search_antipodal_pairs(
@@ -177,8 +156,7 @@ def search_antipodal_pairs(
     grasp_axis,
     gripper_min,
     gripper_max,
-    axis_width=None,
-    num_candidates=NUM_CONTACT_CANDIDATES
+    num_candidates=80
 ):
 
     low_indices, high_indices = (
@@ -193,7 +171,7 @@ def search_antipodal_pairs(
     candidates = []
 
     # --------------------------------------------------------
-    # 양쪽 contact 후보 조합
+    # 모든 점 쌍 검사
     # --------------------------------------------------------
 
     for idx_a in low_indices:
@@ -218,7 +196,7 @@ def search_antipodal_pairs(
                 continue
 
             # ------------------------------------------------
-            # gripper 범위
+            # gripper width
             # ------------------------------------------------
 
             if not (
@@ -228,16 +206,12 @@ def search_antipodal_pairs(
             ):
                 continue
 
-            # ------------------------------------------------
-            # contact A → B 방향
-            # ------------------------------------------------
-
             pair_axis = (
                 difference / width
             )
 
             # ------------------------------------------------
-            # normal 방향
+            # normal끼리 얼마나 반대인지
             # ------------------------------------------------
 
             normal_dot = np.dot(
@@ -246,7 +220,8 @@ def search_antipodal_pairs(
             )
 
             # ------------------------------------------------
-            # normal과 grasp 방향 정렬 정도
+            # 각각의 normal이 grasp 방향과
+            # 얼마나 평행한지
             # ------------------------------------------------
 
             alignment_a = abs(
@@ -269,7 +244,11 @@ def search_antipodal_pairs(
             ) / 2.0
 
             # ------------------------------------------------
-            # antipodal score
+            # antipodal 정도
+            #
+            # dot = -1 → 완벽하게 반대
+            # dot =  0 → 직각
+            # dot = +1 → 같은 방향
             # ------------------------------------------------
 
             antipodal_score = (
@@ -277,76 +256,56 @@ def search_antipodal_pairs(
             )
 
             # ------------------------------------------------
-            # width가 물체 전체 폭(axis_width)에 가까울수록 높은 점수
-            # (단일 시점 depth 노이즈로 우연히 좁은 지점이
-            #  antipodal처럼 보이는 것을 방지, 범열 제안 반영)
-            # ------------------------------------------------
-
-            if axis_width is not None and axis_width > 1e-6:
-                width_similarity = 1.0 - min(
-                    abs(width - axis_width) / axis_width,
-                    1.0
-                )
-            else:
-                width_similarity = 0.0
-
-            # ------------------------------------------------
-            # 최종 score
+            # 종합 score
             # ------------------------------------------------
 
             score = (
-                0.5 * antipodal_score
-                + 0.2 * alignment
-                + 0.3 * width_similarity
+                0.7 * antipodal_score
+                + 0.3 * alignment
             )
 
             candidates.append({
 
-                "index_a":
-                    int(idx_a),
+                "index_a": int(idx_a),
 
-                "index_b":
-                    int(idx_b),
+                "index_b": int(idx_b),
 
-                "point_a":
-                    point_a.copy(),
+                "point_a": point_a.copy(),
 
-                "point_b":
-                    point_b.copy(),
+                "point_b": point_b.copy(),
 
-                "normal_a":
-                    normal_a.copy(),
+                "normal_a": normal_a.copy(),
 
-                "normal_b":
-                    normal_b.copy(),
+                "normal_b": normal_b.copy(),
 
-                "width":
-                    float(width),
+                "width": float(width),
 
-                "pair_axis":
-                    pair_axis.copy(),
+                "pair_axis": pair_axis.copy(),
 
-                "normal_dot":
-                    float(normal_dot),
+                "normal_dot": float(
+                    normal_dot
+                ),
 
-                "alignment_a":
-                    float(alignment_a),
+                "alignment_a": float(
+                    alignment_a
+                ),
 
-                "alignment_b":
-                    float(alignment_b),
+                "alignment_b": float(
+                    alignment_b
+                ),
 
-                "alignment":
-                    float(alignment),
+                "alignment": float(
+                    alignment
+                ),
 
-                "antipodal_score":
-                    float(antipodal_score),
+                "antipodal_score": float(
+                    antipodal_score
+                ),
 
-                "width_similarity":
-                    float(width_similarity),
-
-                "score":
-                    float(score)
+                "score": float(score)
             })
+
+    # score 높은 순으로 정렬
 
     candidates.sort(
         key=lambda x: x["score"],
@@ -357,7 +316,7 @@ def search_antipodal_pairs(
 
 
 # ============================================================
-# 6. PCA 축 하나 평가
+# 6. PCA 축 평가
 # ============================================================
 
 def evaluate_axis(
@@ -370,10 +329,7 @@ def evaluate_axis(
     gripper_max
 ):
 
-    axis = (
-        axis
-        / np.linalg.norm(axis)
-    )
+    axis = axis / np.linalg.norm(axis)
 
     width = compute_axis_width(
         points,
@@ -393,14 +349,17 @@ def evaluate_axis(
         f"({width * 100:.2f} cm)"
     )
 
+    # --------------------------------------------------------
+    # 후보 검색
+    # --------------------------------------------------------
+
     candidates = search_antipodal_pairs(
         points,
         normals,
         center,
         axis,
         gripper_min,
-        gripper_max,
-        axis_width=width
+        gripper_max
     )
 
     if len(candidates) == 0:
@@ -411,13 +370,15 @@ def evaluate_axis(
 
         return {
             "axis_index": axis_index,
-            "axis": axis.copy(),
+            "axis": axis.tolist(),
             "axis_width": float(width),
             "candidates": [],
-            "best": None,
-            "antipodal": False,
-            "graspable": False
+            "best": None
         }
+
+    # --------------------------------------------------------
+    # 상위 후보 출력
+    # --------------------------------------------------------
 
     print(
         f"gripper 범위 내 후보: "
@@ -488,9 +449,14 @@ def evaluate_axis(
         f"{best['score']:.4f}"
     )
 
+    # --------------------------------------------------------
+    # antipodal 판정
+    #
+    # dot <= -0.8
+    # --------------------------------------------------------
+
     antipodal = (
-        best["normal_dot"]
-        <= ANTIPODAL_THRESHOLD
+        best["normal_dot"] <= -0.8
     )
 
     graspable = (
@@ -513,7 +479,7 @@ def evaluate_axis(
 
     return {
         "axis_index": axis_index,
-        "axis": axis.copy(),
+        "axis": axis.tolist(),
         "axis_width": float(width),
         "candidates": candidates,
         "best": best,
@@ -526,98 +492,168 @@ def evaluate_axis(
 # 7. Grasp Pose 계산
 # ============================================================
 
-def compute_grasp_pose(best_result):
+def compute_grasp_pose(
+    best_result
+):
 
     if best_result is None:
         return None
 
     pair = best_result["best"]
 
-    point_a = np.asarray(pair["point_a"], dtype=float)
-    point_b = np.asarray(pair["point_b"], dtype=float)
+    point_a = np.asarray(
+        pair["point_a"],
+        dtype=float
+    )
 
-    normal_a = np.asarray(pair["normal_a"], dtype=float)
-    normal_b = np.asarray(pair["normal_b"], dtype=float)
+    point_b = np.asarray(
+        pair["point_b"],
+        dtype=float
+    )
 
-    # ========================================================
+    normal_a = np.asarray(
+        pair["normal_a"],
+        dtype=float
+    )
+
+    normal_b = np.asarray(
+        pair["normal_b"],
+        dtype=float
+    )
+
+    # --------------------------------------------------------
     # 1. Grasp position
-    # ========================================================
+    #
+    # 두 접촉점의 중간
+    # --------------------------------------------------------
 
-    position = (point_a + point_b) / 2.0
+    position = (
+        point_a + point_b
+    ) / 2.0
 
-    # ========================================================
+    # --------------------------------------------------------
     # 2. Closing axis
-    # ========================================================
+    #
+    # 그리퍼 손가락이 서로 닫히는 방향
+    # --------------------------------------------------------
 
-    closing_axis = point_b - point_a
-    closing_norm = np.linalg.norm(closing_axis)
+    closing_axis = (
+        point_b - point_a
+    )
+
+    closing_norm = np.linalg.norm(
+        closing_axis
+    )
 
     if closing_norm < 1e-8:
         return None
 
     closing_axis /= closing_norm
 
-    # ========================================================
+    # --------------------------------------------------------
     # 3. Approach axis
-    # ========================================================
+    #
+    # 두 접촉면의 바깥쪽 normal을 이용
+    #
+    # normal_a와 normal_b는 서로 반대이므로
+    # normal_a - normal_b 방향을 사용
+    # --------------------------------------------------------
 
-    approach_axis = -(normal_a + normal_b)
-    approach_norm = np.linalg.norm(approach_axis)
+    approach_axis = (
+        normal_a - normal_b
+    )
+
+    approach_norm = np.linalg.norm(
+        approach_axis
+    )
 
     if approach_norm < 1e-8:
-        approach_axis = -normal_a
-        approach_norm = np.linalg.norm(approach_axis)
 
-    if approach_norm < 1e-8:
-        return None
+        approach_axis = normal_a.copy()
 
-    approach_axis /= approach_norm
+    else:
 
-    # closing axis와 직교하도록 보정
+        approach_axis /= approach_norm
+
+    # --------------------------------------------------------
+    # 4. Approach axis를 closing axis에 직교화
+    # --------------------------------------------------------
+
     approach_axis = (
         approach_axis
-        - np.dot(approach_axis, closing_axis) * closing_axis
+        - np.dot(
+            approach_axis,
+            closing_axis
+        ) * closing_axis
     )
 
-    approach_norm = np.linalg.norm(approach_axis)
+    approach_norm = np.linalg.norm(
+        approach_axis
+    )
+
+    if approach_norm < 1e-8:
+
+        # fallback
+        approach_axis = normal_a.copy()
+
+        approach_axis = (
+            approach_axis
+            - np.dot(
+                approach_axis,
+                closing_axis
+            ) * closing_axis
+        )
+
+        approach_norm = np.linalg.norm(
+            approach_axis
+        )
 
     if approach_norm < 1e-8:
         return None
 
     approach_axis /= approach_norm
 
-    # ========================================================
-    # 4. Third axis
+    # --------------------------------------------------------
+    # 5. Third axis
     #
-    # right-handed coordinate system
-    # ========================================================
+    # 오른손 좌표계
+    # --------------------------------------------------------
 
     third_axis = np.cross(
-        approach_axis,
-        closing_axis
+        closing_axis,
+        approach_axis
     )
 
-    third_norm = np.linalg.norm(third_axis)
+    third_norm = np.linalg.norm(
+        third_axis
+    )
 
     if third_norm < 1e-8:
         return None
 
     third_axis /= third_norm
 
-    # ========================================================
-    # 5. 다시 직교화
-    # ========================================================
+    # --------------------------------------------------------
+    # 다시 직교화
+    # --------------------------------------------------------
 
     approach_axis = np.cross(
-        closing_axis,
-        third_axis
+        third_axis,
+        closing_axis
     )
 
-    approach_axis /= np.linalg.norm(approach_axis)
+    approach_axis /= np.linalg.norm(
+        approach_axis
+    )
 
-    # ========================================================
+    # --------------------------------------------------------
     # 6. Rotation matrix
-    # ========================================================
+    #
+    # column:
+    #   0 = closing
+    #   1 = third
+    #   2 = approach
+    # --------------------------------------------------------
 
     rotation_matrix = np.column_stack([
         closing_axis,
@@ -625,218 +661,52 @@ def compute_grasp_pose(best_result):
         approach_axis
     ])
 
-    det_R = np.linalg.det(rotation_matrix)
-
-    print(f"[DEBUG] det(R) = {det_R:.6f}")
-
-    if det_R < 0:
-        third_axis *= -1.0
-
-        rotation_matrix = np.column_stack([
-            closing_axis,
-            third_axis,
-            approach_axis
-        ])
-
-        det_R = np.linalg.det(rotation_matrix)
-
-        print(f"[DEBUG] corrected det(R) = {det_R:.6f}")
+    # --------------------------------------------------------
+    # 결과
+    # --------------------------------------------------------
 
     return {
-        "position": position.tolist(),
-        "closing_axis": closing_axis.tolist(),
-        "approach_axis": approach_axis.tolist(),
-        "third_axis": third_axis.tolist(),
-        "rotation_matrix": rotation_matrix.tolist(),
-        "width": float(pair["width"]),
-        "contact_a": point_a.tolist(),
-        "contact_b": point_b.tolist(),
-        "normal_a": normal_a.tolist(),
-        "normal_b": normal_b.tolist()
+
+        "position":
+            position.tolist(),
+
+        "closing_axis":
+            closing_axis.tolist(),
+
+        "approach_axis":
+            approach_axis.tolist(),
+
+        "third_axis":
+            third_axis.tolist(),
+
+        "rotation_matrix":
+            rotation_matrix.tolist(),
+
+        "width":
+            float(pair["width"]),
+
+        "contact_a":
+            point_a.tolist(),
+
+        "contact_b":
+            point_b.tolist(),
+
+        "normal_a":
+            normal_a.tolist(),
+
+        "normal_b":
+            normal_b.tolist()
     }
 
-# ============================================================
-# 8. Grasp 시각화
-# ============================================================
-
-def visualize_grasp(points, grasp_pose):
-
-    """
-    grasp 계산에 실제로 사용된 점군만 시각화
-    + contact A/B
-    + grasp center
-    + contact 연결선
-    + grasp coordinate frame
-    """
-
-    if grasp_pose is None:
-
-        print(
-            "[시각화] grasp pose가 없습니다."
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # 1. 실제 grasp 계산에 사용된 점군
-    # --------------------------------------------------------
-
-    pcd = o3d.geometry.PointCloud()
-
-    pcd.points = (
-        o3d.utility.Vector3dVector(
-            points
-        )
-    )
-
-    # 회색 점군
-    pcd.paint_uniform_color(
-        [0.65, 0.65, 0.65]
-    )
-
-    # --------------------------------------------------------
-    # 2. Contact A / B
-    # --------------------------------------------------------
-
-    contact_a = np.asarray(
-        grasp_pose["contact_a"],
-        dtype=float
-    )
-
-    contact_b = np.asarray(
-        grasp_pose["contact_b"],
-        dtype=float
-    )
-
-    contacts = o3d.geometry.PointCloud()
-
-    contacts.points = (
-        o3d.utility.Vector3dVector(
-            np.array([
-                contact_a,
-                contact_b
-            ])
-        )
-    )
-
-    # 빨간색
-    contacts.paint_uniform_color(
-        [1.0, 0.0, 0.0]
-    )
-
-    # --------------------------------------------------------
-    # 3. Grasp 중심
-    # --------------------------------------------------------
-
-    position = np.asarray(
-        grasp_pose["position"],
-        dtype=float
-    )
-
-    grasp_point = o3d.geometry.PointCloud()
-
-    grasp_point.points = (
-        o3d.utility.Vector3dVector(
-            np.array([
-                position
-            ])
-        )
-    )
-
-    # 분홍색
-    grasp_point.paint_uniform_color(
-        [1.0, 0.0, 1.0]
-    )
-
-    # --------------------------------------------------------
-    # 4. Contact A-B 연결선
-    # --------------------------------------------------------
-
-    contact_line = o3d.geometry.LineSet()
-
-    contact_line.points = (
-        o3d.utility.Vector3dVector(
-            np.array([
-                contact_a,
-                contact_b
-            ])
-        )
-    )
-
-    contact_line.lines = (
-        o3d.utility.Vector2iVector([
-            [0, 1]
-        ])
-    )
-
-    # 빨간색
-    contact_line.colors = (
-        o3d.utility.Vector3dVector([
-            [1.0, 0.0, 0.0]
-        ])
-    )
-
-    # --------------------------------------------------------
-    # 5. Grasp 좌표계
-    # --------------------------------------------------------
-
-    frame = (
-        o3d.geometry.TriangleMesh
-        .create_coordinate_frame(
-            size=0.03,
-            origin=position
-        )
-    )
-
-    # --------------------------------------------------------
-    # 6. 시각화
-    # --------------------------------------------------------
-
-    print("\n================================")
-    print("GRASP VISUALIZATION")
-    print("================================")
-
-    print(
-        f"시각화 점 개수: {len(points)}"
-    )
-
-    print(
-        "회색 = grasp 계산에 사용된 점군"
-    )
-
-    print(
-        "빨간 점 = contact A / B"
-    )
-
-    print(
-        "분홍 점 = grasp center"
-    )
-
-    print(
-        "좌표축: X=빨강, Y=초록, Z=파랑"
-    )
-
-    print(
-        "\nOpen3D 창을 닫으면 프로그램이 종료됩니다."
-    )
-
-    o3d.visualization.draw_geometries([
-        pcd,
-        contacts,
-        grasp_point,
-        contact_line,
-        frame
-    ])
-
 
 # ============================================================
-# 9. 전체 grasp 계산
+# 8. 전체 grasp 계산
 # ============================================================
 
 def find_grasp(
     base_name,
-    gripper_min=GRIPPER_MIN,
-    gripper_max=GRIPPER_MAX,
+    gripper_min=0.005,
+    gripper_max=0.065,
     **preprocess_kwargs
 ):
 
@@ -849,14 +719,6 @@ def find_grasp(
         **preprocess_kwargs
     )
 
-    if object_pcd is None:
-
-        print(
-            "preprocess 실패"
-        )
-
-        return None
-
     # --------------------------------------------------------
     # PCA
     # --------------------------------------------------------
@@ -868,15 +730,10 @@ def find_grasp(
     )
 
     if center is None:
-
-        print(
-            "PCA 계산 실패"
-        )
-
         return None
 
     # --------------------------------------------------------
-    # Surface normal
+    # normals
     # --------------------------------------------------------
 
     print("\n==============================")
@@ -894,12 +751,12 @@ def find_grasp(
     )
 
     # --------------------------------------------------------
-    # PCA 3축 평가
+    # 각 PCA 축 평가
     # --------------------------------------------------------
 
     results = []
 
-    for i in range(2):  # approach축(2) 제외
+    for i in range(3):
 
         result = evaluate_axis(
             points,
@@ -914,13 +771,13 @@ def find_grasp(
         results.append(result)
 
     # --------------------------------------------------------
-    # 유효 grasp만 선택
+    # 유효 grasp
     # --------------------------------------------------------
 
     valid = [
         r
         for r in results
-        if r["graspable"]
+        if r.get("graspable", False)
     ]
 
     print("\n================================")
@@ -938,31 +795,34 @@ def find_grasp(
 
     else:
 
+        best = max(
+            valid,
+            key=lambda x:
+            x["best"]["score"]
+        )
+
         for result in valid:
 
             pair = result["best"]
 
             print(
                 f"축 {result['axis_index']} "
-                f"→ width="
+                f"→ "
+                f"width="
                 f"{pair['width'] * 100:.2f} cm "
-                f"→ dot="
+                f"→ "
+                f"dot="
                 f"{pair['normal_dot']:.4f} "
-                f"→ score="
+                f"→ "
+                f"score="
                 f"{pair['score']:.4f}"
             )
-
-        best = max(
-            valid,
-            key=lambda r:
-            r["best"]["score"]
-        )
-
-        pair = best["best"]
 
         print("\n================================")
         print("선택된 grasp")
         print("================================")
+
+        pair = best["best"]
 
         print(
             f"축: "
@@ -985,7 +845,7 @@ def find_grasp(
         )
 
     # --------------------------------------------------------
-    # Grasp pose
+    # Grasp Pose 계산
     # --------------------------------------------------------
 
     grasp_pose = compute_grasp_pose(
@@ -1042,12 +902,12 @@ def find_grasp(
         )
 
     # --------------------------------------------------------
-    # 반환
+    # return
     # --------------------------------------------------------
 
     return {
 
-        "center":
+        "position":
             center.tolist(),
 
         "axis_0":
@@ -1068,39 +928,31 @@ def find_grasp(
         "grasp_pose":
             grasp_pose,
 
-        # ★ 핵심 수정
-        # grasp 계산에 실제 사용된 점군 저장
-        "points":
-            points.tolist(),
-
         "num_points":
             len(points)
     }
 
 
 # ============================================================
-# 10. 실행
+# 9. 실행
 # ============================================================
 
 if __name__ == "__main__":
 
-    if len(sys.argv) < 2:
+    import sys
 
-        print(
-            "사용법:"
-        )
-
-        print(
-            "python3 find_grasp.py "
-            "<object_name>"
-        )
-
-        sys.exit(1)
-
-    base_name = sys.argv[1]
+    base_name = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "block_1x1_01_front"
+    )
 
     result = find_grasp(
         base_name,
+        u_min=200,
+        u_max=330,
+        v_min=300,
+        v_max=420
     )
 
     print("\n================================")
@@ -1156,9 +1008,9 @@ if __name__ == "__main__":
                 f"{pair['score']:.4f}"
             )
 
-            pose = result["grasp_pose"]
+            if result["grasp_pose"] is not None:
 
-            if pose is not None:
+                pose = result["grasp_pose"]
 
                 print(
                     f"grasp position: "
@@ -1173,10 +1025,4 @@ if __name__ == "__main__":
                 print(
                     f"approach axis: "
                     f"{pose['approach_axis']}"
-                )
-
-                # ★ 계산에 사용된 점군만 시각화
-                visualize_grasp(
-                    np.asarray(result["points"]),
-                    pose
                 )
