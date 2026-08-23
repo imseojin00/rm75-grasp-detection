@@ -59,7 +59,9 @@ def main():
     print(f"  width: {grasp_width*100:.2f} cm")
 
     print("\n[4/5] base_link 좌표 변환 중...")
-    rclpy.init()
+    if not rclpy.ok():
+        rclpy.init()
+        rclpy.init()
     node = GraspToBase()
     executor = SingleThreadedExecutor()
     executor.add_node(node)
