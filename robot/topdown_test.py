@@ -70,7 +70,7 @@ ACC_SCALE = 0.1
 # 정밀 모델이 아니라 '안전 봉투(envelope)'다. 크기는 실물보다 조금 크게.
 GRIPPER_BOX_SIZE = (0.11, 0.13, 0.18)    # x, y, z (Link7 프레임)
 GRIPPER_BOX_CENTER = (0.0, 0.0, 0.09)    # Link7 원점에서 툴 z로 9 cm 지점이 중심
-TOUCH_LINKS = ["Link7", "Link6"]         # 부착물이 닿아도 되는 링크
+TOUCH_LINKS = ["Link7", "Link6", "Link5", "Link4", "Link3", "Link2", "Link1", "base_link"]  # 봉투 확대(0.18)로 확장 — 2026-08-21
 
 
 def make_pose(x, y, z, quat=(0.0, 0.0, 0.0, 1.0)):
