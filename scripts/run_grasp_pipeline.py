@@ -17,6 +17,29 @@ from find_grasp import find_grasp
 from coord_transform_v3 import GraspToBase
 from safety_gate import check_safety
 
+# ── z 보정 (2026-08-23 실기체 발견) ──────────────────────
+# 뎁스는 물체 윗면만 보므로 클러스터 중심 z가 실제 파지 높이보다 높다.
+# block_1x1 실측: 검출 -0.077 [m] / 실제 필요 -0.1075 [m]
+TABLE_Z = -0.120          # [m] base_link 기준 테이블 면
+GRASP_OFFSET_Z = 0.171    # [m] 플랜지 -> 조 안쪽 패드 (수직 파지)
+OBJECT_HEIGHT = {         # [m]
+    "block_1x1": 0.025,
+    "block_1x2": 0.025,
+    "block_2x2": 0.025,
+    "block_L3":  0.025,
+    "can":       0.134,
+}
+
+
+def corrected_grasp_z(object_name, detected_z):
+    """파지점 z [m]. 테이블 기준이 검출 z보다 신뢰도가 높다."""
+    h = OBJECT_HEIGHT.get(object_name)
+    if h is None:
+        print(f"  [경고] {object_name} 높이 미등록 - 검출값 사용")
+        return detected_z
+    return TABLE_Z + h / 2.0
+
+
 
 def main():
     object_name = sys.argv[1] if len(sys.argv) > 1 else "block_1x1"
@@ -61,7 +84,6 @@ def main():
     print("\n[4/5] base_link 좌표 변환 중...")
     if not rclpy.ok():
         rclpy.init()
-        rclpy.init()
     node = GraspToBase()
     executor = SingleThreadedExecutor()
     executor.add_node(node)
@@ -71,7 +93,10 @@ def main():
 
     try:
         pos_base, R_base = node.to_base_full(grasp_position_cam, grasp_rotation_cam)
-        link7_target = pos_base + np.array([0, 0, 0.171])
+        z_fixed = corrected_grasp_z(object_name, pos_base[2])
+        print(f"  z 보정: {pos_base[2]:.4f} -> {z_fixed:.4f} [m]")
+        link7_target = np.array([pos_base[0], pos_base[1],
+                                 z_fixed + GRASP_OFFSET_Z])
 
         print(f"  base_link 파지점: {pos_base}")
         print(f"  Link7 목표: {link7_target}")
