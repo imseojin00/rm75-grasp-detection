@@ -49,7 +49,7 @@ from shape_msgs.msg import SolidPrimitive
 
 # False = 계획만 확인하고 실제 로봇은 움직이지 않음
 # True  = Enter 후 실제 trajectory 실행
-EXECUTE = True
+EXECUTE = False
 
 
 # ============================================================

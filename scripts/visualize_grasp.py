@@ -20,14 +20,7 @@ base_name = (
 # Grasp 계산
 # ============================================================
 
-result = find_grasp(
-    base_name,
-    u_min=200,
-    u_max=330,
-    v_min=300,
-    v_max=420
-)
-
+result = find_grasp(base_name)
 
 if result is None:
     print("grasp 계산 실패")

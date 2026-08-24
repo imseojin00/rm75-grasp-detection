@@ -12,7 +12,7 @@ from preprocess import preprocess
 GRIPPER_MIN = 0.005   # 0.5 cm
 GRIPPER_MAX = 0.065   # 6.5 cm
 
-NORMAL_RADIUS = 0.01
+NORMAL_RADIUS = 0.005
 NORMAL_MAX_NN = 30
 
 NUM_CONTACT_CANDIDATES = 80
@@ -844,7 +844,7 @@ def find_grasp(
     # preprocess
     # --------------------------------------------------------
 
-    object_pcd = preprocess(
+    object_pcd, plane_model = preprocess(
         base_name,
         **preprocess_kwargs
     )
@@ -856,6 +856,10 @@ def find_grasp(
         )
 
         return None
+
+    # 높이 계산은 table_z_from_tf.py(TF 기반 고정 테이블 위치)에서
+    # 별도로 처리. RANSAC 기반 방식(plane_model 활용)은 물체가 크거나
+    # 복잡하면(block_2x2, block_L3, can) 잘못된 평면을 잡는 문제가 있어 폐기.
 
     # --------------------------------------------------------
     # PCA

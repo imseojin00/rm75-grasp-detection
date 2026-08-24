@@ -250,7 +250,8 @@ def search_best_preprocessing(pcd, base_name):
                 labels = run_dbscan(remaining, eps)
                 evaluation = evaluate_attempt(remaining, labels, object_type, downsampled_count, None)
                 attempts.append({"remaining": remaining, "labels": labels,
-                                  "dbscan_eps": float(eps), "ransac_removed_ratio": None, **evaluation})
+                                  "dbscan_eps": float(eps), "ransac_removed_ratio": None,
+                                  "plane_model": None, **evaluation})
             except Exception:
                 continue
     else:
@@ -266,7 +267,7 @@ def search_best_preprocessing(pcd, base_name):
                     evaluation = evaluate_attempt(remaining, labels, object_type, downsampled_count, removed_ratio)
                     attempts.append({"remaining": remaining, "labels": labels,
                                       "dbscan_eps": float(eps), "ransac_removed_ratio": float(removed_ratio),
-                                      **evaluation})
+                                      "plane_model": list(plane_model), **evaluation})
                 except Exception:
                     continue
 
@@ -303,4 +304,4 @@ def preprocess(base_name, data_dir=DATA_DIR, verbose=True):
         print(f"[디버그] 선택된 cluster: {best['selected']['cluster_id']} ({best['selected']['count']}개)")
 
     object_pcd = select_object_pcd(best["remaining"], best["labels"], best["selected"]["cluster_id"])
-    return object_pcd
+    return object_pcd, best.get("plane_model")
