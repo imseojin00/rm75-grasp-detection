@@ -522,6 +522,7 @@ def main():
     steps = [
         ("Scene 등록", move_node.setup_scene),
         ("접근 자세(위쪽 대기점)", lambda: move_node.move_pose(x, y, z_approach, quat=grasp_quat, label="접근 자세")),
+        ("그리퍼 열기", lambda: (move_node.gripper_open(), True)[1]),
         ("하강", lambda: move_node.move_linear(x, y, z, quat=grasp_quat, label="하강")),
     ]
     for name, action in steps:
