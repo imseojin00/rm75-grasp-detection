@@ -150,7 +150,7 @@ def cluster_geometry(points):
     sorted_extent = np.sort(extent)
     smallest, middle, largest = float(sorted_extent[0]), float(sorted_extent[1]), float(sorted_extent[2])
     flatness = smallest / max(largest, 1e-9)
-    table_like = largest > 0.14 and smallest < 0.010 and flatness < 0.08
+    table_like = smallest < 0.010 and flatness < 0.08
     return {
         "center": center, "extent": extent,
         "smallest_extent": smallest, "middle_extent": middle, "largest_extent": largest,
