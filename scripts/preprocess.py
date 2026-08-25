@@ -11,11 +11,10 @@ DATA_DIR = ROOT / "data"
 # ============================================================
 DEPTH_MIN = 0.15
 DEPTH_MAX = 0.50
-ROI_U_MIN = 150
-ROI_U_MAX = 500
-ROI_V_MIN = 180
-ROI_V_MAX = 430
-
+ROI_U_MIN = 0
+ROI_U_MAX = 639
+ROI_V_MIN = 0
+ROI_V_MAX = 479
 VOXEL_SIZE = 0.002
 
 RANSAC_DISTANCE_THRESHOLD = 0.003

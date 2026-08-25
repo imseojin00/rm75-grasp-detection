@@ -18,6 +18,7 @@ NORMAL_MAX_NN = 30
 NUM_CONTACT_CANDIDATES = 80
 
 ANTIPODAL_THRESHOLD = -0.8
+MIN_RELIABLE_POINTS = 150  # 이보다 적으면 결과 신뢰 불가
 
 
 # ============================================================
@@ -877,6 +878,10 @@ def find_grasp(
             "PCA 계산 실패"
         )
 
+        return None
+
+    if len(points) < MIN_RELIABLE_POINTS:
+        print(f"경고: 점 개수 부족({len(points)}개 < {MIN_RELIABLE_POINTS}), 결과 신뢰 불가. 재촬영 필요")
         return None
 
     # --------------------------------------------------------
