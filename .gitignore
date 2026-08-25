@@ -223,3 +223,4 @@ data/*.png
 data/*.pcd
 output/*.json
 
+data/
