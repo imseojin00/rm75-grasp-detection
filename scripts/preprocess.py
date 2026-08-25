@@ -144,21 +144,45 @@ def run_dbscan(pcd, eps, min_points=DBSCAN_MIN_POINTS):
     return labels
 
 
-def cluster_geometry(points):
+def cluster_geometry(points, plane_model=None):
+    """
+    table_like 판정 기준 변경 (실측 근거):
+      기존 - 두께(smallest)와 납작함(flatness)으로 판정.
+             단일 시점 depth는 물체 윗면만 담기므로 물체도 3~8mm로 납작하게
+             나와서, 테이블 잔여물(flatness 0.085)이 진짜 물체들
+             (block_1x3 0.0802, block_1x2 0.0816) 사이에 끼어 분리 불가.
+      변경 - RANSAC 평면으로부터의 거리로 판정.
+             테이블 잔여물 5.9mm vs 물체 23.3/74.8/109.9mm 로 명확히 분리됨.
+    """
     center = points.mean(axis=0)
     extent = points.max(axis=0) - points.min(axis=0)
     sorted_extent = np.sort(extent)
     smallest, middle, largest = float(sorted_extent[0]), float(sorted_extent[1]), float(sorted_extent[2])
     flatness = smallest / max(largest, 1e-9)
-    table_like = smallest < 0.010 and flatness < 0.08
+
+    plane_distance = None
+    if plane_model is not None:
+        a, b, c, d = [float(v) for v in plane_model]
+        norm = np.sqrt(a * a + b * b + c * c)
+        if norm > 1e-9:
+            dist = np.abs(points @ np.array([a, b, c]) + d) / norm
+            plane_distance = float(dist.mean())
+
+    if plane_distance is not None:
+        table_like = plane_distance < 0.010
+    else:
+        table_like = smallest < 0.010 and flatness < 0.08
+
     return {
         "center": center, "extent": extent,
         "smallest_extent": smallest, "middle_extent": middle, "largest_extent": largest,
-        "flatness": float(flatness), "table_like": bool(table_like),
+        "flatness": float(flatness),
+        "plane_distance": plane_distance,
+        "table_like": bool(table_like),
     }
 
 
-def build_cluster_candidates(pcd, labels):
+def build_cluster_candidates(pcd, labels, plane_model=None):
     points = np.asarray(pcd.points)
     candidates = []
     for cluster_id in sorted(int(v) for v in np.unique(labels) if v >= 0):
@@ -166,7 +190,7 @@ def build_cluster_candidates(pcd, labels):
         if len(indices) == 0:
             continue
         cluster_points = points[indices]
-        geometry = cluster_geometry(cluster_points)
+        geometry = cluster_geometry(cluster_points, plane_model)
         center = geometry["center"]
         center_distance = float(np.linalg.norm(center[:2]))
         candidates.append({"cluster_id": cluster_id, "count": int(len(indices)),
@@ -210,8 +234,9 @@ def choose_object_candidate(candidates, object_type):
     return selected
 
 
-def evaluate_attempt(pcd, labels, object_type, downsampled_count, ransac_removed_ratio):
-    candidates = build_cluster_candidates(pcd, labels)
+def evaluate_attempt(pcd, labels, object_type, downsampled_count, ransac_removed_ratio,
+                     plane_model=None):
+    candidates = build_cluster_candidates(pcd, labels, plane_model)
     selected = choose_object_candidate(candidates, object_type)
 
     noise_ratio = float(np.mean(labels == -1))
@@ -263,7 +288,7 @@ def search_best_preprocessing(pcd, base_name):
             for eps in eps_candidates:
                 try:
                     labels = run_dbscan(remaining, eps)
-                    evaluation = evaluate_attempt(remaining, labels, object_type, downsampled_count, removed_ratio)
+                    evaluation = evaluate_attempt(remaining, labels, object_type, downsampled_count, removed_ratio, plane_model)
                     attempts.append({"remaining": remaining, "labels": labels,
                                       "dbscan_eps": float(eps), "ransac_removed_ratio": float(removed_ratio),
                                       "plane_model": list(plane_model), **evaluation})
