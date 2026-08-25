@@ -453,7 +453,7 @@ def main():
     time.sleep(1.0)
 
     try:
-        table_z_cam = table_node.get_table_z_in_camera()
+        table_z_cam = table_node.get_table_z_in_camera(grasp_position_cam)
         top_z_cam = grasp_position_cam[2]
         object_height = table_z_cam - top_z_cam
         print(f"  자동 계산된 물체 높이: {object_height*100:.2f} cm")
