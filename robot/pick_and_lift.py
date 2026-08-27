@@ -324,11 +324,11 @@ class PickAndLift(Node):
         time.sleep(0.5)
 
         msg = Gripperset()
-        msg.position = 365
+        msg.position = 1000
         msg.block = False
         msg.timeout = 0
 
-        print("  -> 그리퍼 열기: position=365")
+        print("  -> 그리퍼 열기: position=1000")
 
         for _ in range(30):
             pub.publish(msg)
