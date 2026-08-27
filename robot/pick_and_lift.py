@@ -78,21 +78,25 @@ def compute_rotation_angle_minarea(points):
         return None
     largest = max(contours, key=cv2.contourArea)
 
-    # 반지름 변동성으로 원형/사각형 판별 (fill_ratio보다 명확히 구분됨, 검증됨)
-    # 원형: 변동성 0.2 이상, 사각형: 0.1 이하
-    M = cv2.moments(largest)
-    if M['m00'] > 0:
-        mcx = M['m10'] / M['m00']
-        mcy = M['m01'] / M['m00']
-        contour_points = largest.reshape(-1, 2)
-        distances = np.sqrt((contour_points[:, 0] - mcx) ** 2 + (contour_points[:, 1] - mcy) ** 2)
-        variability = distances.std() / distances.mean() if distances.mean() > 0 else 1.0
-        if variability > 0.15:
-            print(f"    [회전계산] 반지름 변동성={variability:.3f} -> 원형으로 판단, 회전 보정 안 함")
-            return 0.0
-
     rect = cv2.minAreaRect(largest)
     (cx, cy), (w, h), angle_deg = rect
+
+    # 종횡비가 1에 가까울 때만(정사각형 vs 원 구분 필요할 때) 반지름 변동성 체크.
+    # 길쭉한 직사각형(예: block_1x2, 2:1)은 종횡비만으로 이미 사각형이 명확하므로
+    # 변동성 체크를 건너뜀 -- 안 그러면 진짜 원(변동성 0.2대)보다
+    # 길쭉한 사각형(변동성 0.26~0.34)이 더 커서 오판됨
+    aspect_ratio = max(w, h) / min(w, h) if min(w, h) > 0 else 1.0
+    if aspect_ratio < 1.3:
+        M = cv2.moments(largest)
+        if M['m00'] > 0:
+            mcx = M['m10'] / M['m00']
+            mcy = M['m01'] / M['m00']
+            contour_points = largest.reshape(-1, 2)
+            distances = np.sqrt((contour_points[:, 0] - mcx) ** 2 + (contour_points[:, 1] - mcy) ** 2)
+            variability = distances.std() / distances.mean() if distances.mean() > 0 else 1.0
+            if variability > 0.15:
+                print(f"    [회전계산] aspect={aspect_ratio:.2f}, 변동성={variability:.3f} -> 원형으로 판단, 회전 보정 안 함")
+                return 0.0
     angle_rad = np.radians(angle_deg)
 
     long_side, short_side = max(w, h), min(w, h)
@@ -312,7 +316,7 @@ class PickAndLift(Node):
             return False
         return self._execute(result.solution, label)
     def gripper_open(self):
-        """파지 전에 그리퍼를 365 위치로 연다."""
+        """파지 전에 그리퍼를 최대(1000)로 연다."""
         from rm_ros_interfaces.msg import Gripperset
 
         pub = self.create_publisher(
@@ -321,7 +325,13 @@ class PickAndLift(Node):
             10
         )
 
-        time.sleep(0.5)
+        for i in range(50):
+            if pub.get_subscription_count() > 0:
+                print(f"  -> 그리퍼 명령 구독자 연결 확인됨 ({i*0.1:.1f}초)")
+                break
+            time.sleep(0.1)
+        else:
+            print("  -> 경고: 구독자 연결을 확인 못했습니다. 그래도 발행 시도합니다.")
 
         msg = Gripperset()
         msg.position = 1000
@@ -348,21 +358,28 @@ class PickAndLift(Node):
             10
         )
 
-        time.sleep(0.5)
+        # 구독자(rm_driver) 연결을 실제로 확인하고 나서 발행
+        # -- 0.5초 고정 대기로는 discovery가 안 끝났을 수 있어 메시지가 유실됐던 것으로 추정
+        for i in range(50):
+            if pub.get_subscription_count() > 0:
+                print(f"  -> 그리퍼 명령 구독자 연결 확인됨 ({i*0.1:.1f}초)")
+                break
+            time.sleep(0.1)
+        else:
+            print("  -> 경고: 구독자 연결을 확인 못했습니다. 그래도 발행 시도합니다.")
 
         msg = Gripperpick()
-        msg.speed = 200
+        msg.speed = 500
         msg.force = 300
-        msg.block = False
-        msg.timeout = 0
+        msg.block = False      # True일 때 드라이버 내부 지연 의심되어 되돌림
+        msg.timeout = 20       # [s] 실측 결과 10초로는 부족, 20초로 상향
 
-        print(f"  -> 그리퍼 파지 시작: width={width_mm:.1f}mm, force=700")
+        print(f"  -> 그리퍼 파지 시작: width={width_mm:.1f}mm, force={msg.force} (block=True, timeout={msg.timeout}s)")
 
-        for _ in range(30):
-            pub.publish(msg)
-            time.sleep(0.1)
+        pub.publish(msg)   # 1회만 발행 -- 반복 발행은 재시작을 유발할 수 있음
+        time.sleep(msg.timeout + 0.5)  # block이 서비스가 아니라 토픽이라 응답을 못 받으므로 시간으로 대기
 
-        print("  -> 그리퍼 파지 완료")
+        print("  -> 그리퍼 파지 완료 (대기 시간 경과)")
 
 
         print("  -> 그리퍼 파지 완료")
