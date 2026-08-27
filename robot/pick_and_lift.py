@@ -471,6 +471,18 @@ def main():
             return
 
         grasp_z_cam = (top_z_cam + table_z_cam) / 2.0
+
+        # 그리퍼가 실제로 감쌀 수 있는 최대 깊이(실측 5.4cm)를 넘지 않도록 제한.
+        # 캔처럼 키가 큰 물체는 "중간"이 이 한계를 넘어서서 그리퍼가
+        # 물체에 부딪히듯 너무 깊이 내려가려는 문제가 있었음.
+        MAX_GRASP_DEPTH_FROM_TOP = 0.054  # [m] 그리퍼 유효 파지 깊이 실측값
+        max_allowed_z = top_z_cam + MAX_GRASP_DEPTH_FROM_TOP
+        if grasp_z_cam > max_allowed_z:
+            print(f"  물체가 너무 깊어 파지 깊이 제한 적용: "
+                  f"{grasp_z_cam*100:.2f}cm -> {max_allowed_z*100:.2f}cm "
+                  f"(윗면에서 {MAX_GRASP_DEPTH_FROM_TOP*100:.1f}cm)")
+            grasp_z_cam = max_allowed_z
+
         grasp_position_cam_corrected = grasp_position_cam.copy()
         grasp_position_cam_corrected[2] = grasp_z_cam
 
