@@ -40,7 +40,7 @@ from table_z_from_tf import TableZFromTF
 from safety_gate import check_safety
 
 # ── 실측값 (오늘 검증됨) ──────────────────────────────────
-TABLE_Z = -0.0879
+TABLE_Z = -0.0849
 GRASP_OFFSET_Z = 0.150
 TOPDOWN_Q = (0.0, 1.0, 0.0, 0.0)
 LIFT = 0.10  # [m] 들어올리는 높이
@@ -522,7 +522,7 @@ def main():
         table_node.destroy_node()
 
     x, y, z = link7_target
-    APPROACH_HEIGHT = 0.10  # [m] 물체 위 10cm 대기점
+    APPROACH_HEIGHT = 0.12  # [m] 물체 위 12cm 대기점 (캔처럼 키 큰 물체의 몸통 스침 완화)
     z_approach = z + APPROACH_HEIGHT
 
     # ── 3. 이동 (접근(위쪽 대기점) -> 하강(실제 목표)) ──

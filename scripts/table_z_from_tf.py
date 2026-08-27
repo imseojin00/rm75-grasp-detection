@@ -16,7 +16,7 @@ import time
 
 BASE_FRAME = "base_link"
 CAMERA_FRAME = "camera_color_optical_frame"
-TABLE_Z_BASE = -0.0879  # [m] base_link 기준 테이블 면 (범열 실측)
+TABLE_Z_BASE = -0.0849  # [m] base_link 기준 테이블 면 (재측정: 범열 0.2696m + 본인 0.2700m 기준 역산)
 
 
 class TableZFromTF(Node):
@@ -72,7 +72,7 @@ def main():
     try:
         table_z_cam = node.get_table_z_in_camera()
         print(f"\n계산된 테이블 z (카메라 좌표계, TF 방식): {table_z_cam:.4f} m")
-        print(f"실측 depth 값(테이블만 촬영): 0.2740 m")
+        print(f"실측 depth 값(테이블만 촬영, 재측정): 0.2696~0.2700 m")
         print(f"범열 실측값(plane_check.py): 0.2696 m")
         print(f"실측 대비 차이: {abs(table_z_cam - 0.2740)*1000:.1f} mm")
     except Exception as e:
