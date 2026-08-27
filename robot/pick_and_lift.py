@@ -358,28 +358,19 @@ class PickAndLift(Node):
             10
         )
 
-        # 구독자(rm_driver) 연결을 실제로 확인하고 나서 발행
-        # -- 0.5초 고정 대기로는 discovery가 안 끝났을 수 있어 메시지가 유실됐던 것으로 추정
-        for i in range(50):
-            if pub.get_subscription_count() > 0:
-                print(f"  -> 그리퍼 명령 구독자 연결 확인됨 ({i*0.1:.1f}초)")
-                break
-            time.sleep(0.1)
-        else:
-            print("  -> 경고: 구독자 연결을 확인 못했습니다. 그래도 발행 시도합니다.")
+        time.sleep(0.5)
 
         msg = Gripperpick()
-        msg.speed = 500
+        msg.speed = 200
         msg.force = 300
-        msg.block = False      # True일 때 드라이버 내부 지연 의심되어 되돌림
-        msg.timeout = 20       # [s] 실측 결과 10초로는 부족, 20초로 상향
+        # block/timeout 필드는 세팅하지 않음 -- 3ea6dc7(실기체 검증된 원본) 그대로 복원.
+        # block=True 명시 세팅 시 드라이버가 다르게 처리하는지 의심되어 원복.
 
-        print(f"  -> 그리퍼 파지 시작: width={width_mm:.1f}mm, force={msg.force} (block=True, timeout={msg.timeout}s)")
+        print(f"  -> 그리퍼 파지 시작: width={width_mm:.1f}mm, force={msg.force}")
 
-        pub.publish(msg)   # 1회만 발행 -- 반복 발행은 재시작을 유발할 수 있음
-        time.sleep(msg.timeout + 0.5)  # block이 서비스가 아니라 토픽이라 응답을 못 받으므로 시간으로 대기
-
-        print("  -> 그리퍼 파지 완료 (대기 시간 경과)")
+        for _ in range(10):
+            pub.publish(msg)
+            time.sleep(0.1)
 
 
         print("  -> 그리퍼 파지 완료")
